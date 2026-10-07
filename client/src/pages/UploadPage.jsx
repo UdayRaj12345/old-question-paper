@@ -19,7 +19,6 @@ const UploadPage = () => {
     subjectName: '',
     subjectCode: '',
     semester: '',
-    academicYear: '',
     examType: ''
   })
 
@@ -192,14 +191,6 @@ const UploadPage = () => {
               <select name="semester" value={formData.semester} onChange={handleChange} required className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none">
                 <option value="">Select Semester</option>
                 {['1', '2', '3', '4', '5', '6', '7', '8'].map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Academic Year *</label>
-              <select name="academicYear" value={formData.academicYear} onChange={handleChange} required className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none">
-                <option value="">Select Year</option>
-                {['2023-2024', '2022-2023', '2021-2022', '2020-2021'].map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
             
