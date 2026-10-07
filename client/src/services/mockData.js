@@ -1,20 +1,13 @@
 export const mockUniversities = [
-  { id: '1', name: 'BBD University', location: 'Lucknow, UP' },
-  { id: '2', name: 'BBD ITM', location: 'Lucknow, UP' },
-  { id: '3', name: 'BBD NITM', location: 'Lucknow, UP' },
-  { id: '4', name: 'AKTU', location: 'Lucknow, UP' },
-  { id: '5', name: 'Lucknow University', location: 'Lucknow, UP' },
+  { id: '1', name: 'ERA University', location: 'Lucknow, UP' },
+  {id: '2', name: 'ERA Medical', location:'Lucknow, UP '}
 ]
 
 export const mockCourses = [
-  'B.Tech Computer Science',
-  'B.Tech Information Technology',
-  'B.Tech Electronics & Communication',
-  'B.Tech Mechanical Engineering',
-  'B.Tech Civil Engineering',
+  'Bio Tech',
   'BCA',
   'BBA',
-  'MBA'
+  
 ]
 
 export const mockPapers = [
