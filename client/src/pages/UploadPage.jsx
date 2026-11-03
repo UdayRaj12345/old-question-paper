@@ -1,12 +1,50 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Upload, FileText, X, CheckCircle, AlertCircle } from 'lucide-react'
-import { mockUniversities, mockCourses } from '../services/mockData'
+import { getUniversities, getCourses, getSubjects } from '../services/api'
 import api from '../services/api'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 const UploadPage = () => {
+  const [universities, setUniversities] = useState([])
+  const [courses, setCourses] = useState([])
+  const [subjects, setSubjects] = useState([])
+  const [academicError, setAcademicError] = useState('')
+
+  useEffect(() => {
+    let isCurrent = true
+
+    const loadAcademicData = async () => {
+      try {
+        const [universityData, courseData, subjectData] = await Promise.all([
+          getUniversities(),
+          getCourses(),
+          getSubjects(),
+        ])
+
+        if (isCurrent) {
+          setUniversities(universityData)
+          setCourses(courseData)
+          setSubjects(subjectData)
+        }
+      } catch (error) {
+        if (isCurrent) {
+          setAcademicError(
+            error.response?.data?.message ||
+              'Could not load universities and courses.'
+          )
+        }
+      }
+    }
+
+    loadAcademicData()
+
+    return () => {
+      isCurrent = false
+    }
+  }, [])
+
   const [dragActive, setDragActive] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -80,7 +118,7 @@ const UploadPage = () => {
     setUploading(true)
 
     const uploadData = new FormData()
-    uploadData.append('pdf', selectedFile)
+    uploadData.append('file', selectedFile)
     Object.keys(formData).forEach(key => {
       uploadData.append(key, formData[key])
     })
@@ -164,7 +202,7 @@ const UploadPage = () => {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">University *</label>
               <select name="universityName" value={formData.universityName} onChange={handleChange} required className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none">
                 <option value="">Select University</option>
-                {mockUniversities.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                {universities.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
               </select>
             </div>
             
@@ -172,18 +210,36 @@ const UploadPage = () => {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Course *</label>
               <select name="courseName" value={formData.courseName} onChange={handleChange} required className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none">
                 <option value="">Select Course</option>
-                {mockCourses.map(c => <option key={c} value={c}>{c}</option>)}
+                {courses.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subject Name *</label>
-              <input type="text" name="subjectName" value={formData.subjectName} onChange={handleChange} required placeholder="e.g. Data Structures" className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none" />
+              <select
+                name="subjectName"
+                value={formData.subjectName}
+                onChange={(e) => {
+                  const selected = subjects.find(subject => subject.name === e.target.value)
+                  setFormData(prev => ({
+                    ...prev,
+                    subjectName: e.target.value,
+                    subjectCode: selected?.code || ''
+                  }))
+                }}
+                required
+                className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none"
+              >
+                <option value="">Select Subject</option>
+                {subjects.map(subject => (
+                  <option key={subject.id} value={subject.name}>{subject.name}</option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subject Code</label>
-              <input type="text" name="subjectCode" value={formData.subjectCode} onChange={handleChange} placeholder="e.g. CS201" className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none" />
+              <input type="text" name="subjectCode" value={formData.subjectCode} readOnly placeholder="Subject code auto-fills" className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary outline-none" />
             </div>
 
             <div>

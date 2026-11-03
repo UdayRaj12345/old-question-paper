@@ -1,38 +1,16 @@
-const Rating = require('../models/Rating');
+const { getDB } = require('../config/database');
 const Paper = require('../models/Paper');
 
-// @desc    Add or update rating
-// @route   POST /api/ratings/:paperId
-// @access  Private
 exports.ratePaper = async (req, res, next) => {
   try {
-    const paperId = req.params.paperId;
-    const { rating } = req.body;
-
-    if (!rating || rating < 1 || rating > 5) {
-      return res.status(400).json({ success: false, message: 'Please provide a valid rating between 1 and 5' });
-    }
-
-    const paper = await Paper.findById(paperId);
-    if (!paper) {
-      return res.status(404).json({ success: false, message: 'Paper not found' });
-    }
-
-    let existingRating = await Rating.findOne({ paper: paperId, user: req.user.id });
-
-    if (existingRating) {
-      existingRating.rating = rating;
-      await existingRating.save();
-      res.status(200).json({ success: true, data: existingRating });
-    } else {
-      const newRating = await Rating.create({
-        paper: paperId,
-        user: req.user.id,
-        rating
-      });
-      res.status(201).json({ success: true, data: newRating });
-    }
-  } catch (err) {
-    next(err);
-  }
+    const paperId = Number(req.params.paperId);
+    const rating = Number(req.body.rating);
+    if (!Number.isSafeInteger(paperId) || paperId <= 0 || !Number.isFinite(rating) || rating < 1 || rating > 5) return res.status(400).json({ success: false, message: 'Provide a valid paper ID and rating between 1 and 5' });
+    if (!(await Paper.findById(paperId))) return res.status(404).json({ success: false, message: 'Paper not found' });
+    const db = getDB();
+    await db.execute('INSERT INTO ratings (paper, `user`, rating) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE rating=VALUES(rating), updatedAt=CURRENT_TIMESTAMP', [paperId, req.user.id, rating]);
+    await db.execute('UPDATE papers SET rating=(SELECT COALESCE(AVG(rating),0) FROM ratings WHERE paper=?) WHERE id=?', [paperId, paperId]);
+    const [rows] = await db.execute('SELECT * FROM ratings WHERE paper=? AND `user`=? LIMIT 1', [paperId, req.user.id]);
+    return res.status(200).json({ success: true, data: rows[0] });
+  } catch (err) { next(err); }
 };

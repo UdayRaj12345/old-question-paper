@@ -1,40 +1,29 @@
 const User = require('../models/User');
+const { getDB } = require('../config/database');
 
-// @desc    Get user profile
-// @route   GET /api/users/profile
-// @access  Private
 exports.getUserProfile = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-    res.status(200).json({ success: true, data: user });
-  } catch (err) {
-    next(err);
-  }
+    return res.status(200).json({ success: true, data: user });
+  } catch (err) { next(err); }
 };
 
-// @desc    Update user profile
-// @route   PUT /api/users/profile
-// @access  Private
 exports.updateUserProfile = async (req, res, next) => {
   try {
-    // fields to update
-    const fieldsToUpdate = {
-      name: req.body.name,
-      avatar: req.body.avatar,
-      college: req.body.college,
-      course: req.body.course,
-      branch: req.body.branch,
-      semester: req.body.semester
-    };
-
-    const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
-      new: true,
-      runValidators: true
-    });
-
-    res.status(200).json({ success: true, data: user });
-  } catch (err) {
-    next(err);
-  }
+    const allowed = ['name', 'avatar', 'college', 'course', 'branch', 'semester'];
+    const fields = []; const values = [];
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        fields.push(`\`${key}\` = ?`);
+        values.push(req.body[key] === '' ? null : req.body[key]);
+      }
+    }
+    if (!fields.length) return res.status(400).json({ success: false, message: 'No profile fields provided' });
+    const db = getDB(); values.push(req.user.id);
+    await db.execute(`UPDATE users SET ${fields.join(', ')}, updatedAt=CURRENT_TIMESTAMP WHERE id=?`, values);
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    return res.status(200).json({ success: true, data: user });
+  } catch (err) { next(err); }
 };

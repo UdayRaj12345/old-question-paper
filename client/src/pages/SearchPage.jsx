@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import { Search, Filter, Download, Star, Clock, Book, ChevronDown } from 'lucide-react'
-import { mockUniversities, mockCourses } from '../services/mockData'
-import { getPapers } from '../services/api'
+import { getPapers, getUniversities, getCourses } from '../services/api'
 
 const displayName = (value) => (typeof value === 'object' ? value?.name : value) || 'Not specified'
 
@@ -21,9 +20,44 @@ const SearchPage = () => {
   
   const [query, setQuery] = useState(initialQuery)
   const [papers, setPapers] = useState([])
+  const [universities, setUniversities] = useState([])
+  const [courses, setCourses] = useState([])
+  const [academicError, setAcademicError] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+
+  // Load universities and courses from the API
+  useEffect(() => {
+    let isCurrent = true
+
+    const loadAcademicData = async () => {
+      try {
+        setAcademicError('')
+        const [universityData, courseData] = await Promise.all([
+          getUniversities(),
+          getCourses(),
+        ])
+
+        if (isCurrent) {
+          setUniversities(universityData)
+          setCourses(courseData)
+        }
+      } catch (requestError) {
+        if (isCurrent) {
+          setAcademicError(
+            requestError.response?.data?.message ||
+              'Could not load universities and courses.'
+          )
+        }
+      }
+    }
+
+    loadAcademicData()
+    return () => {
+      isCurrent = false
+    }
+  }, [])
 
   // Filters state
   const [selectedUniversity, setSelectedUniversity] = useState('')
@@ -48,7 +82,7 @@ const SearchPage = () => {
       } catch (requestError) {
         if (isCurrent) {
           setPapers([])
-          setError(requestError.response?.data?.message || 'Could not connect to the API. Start the server on port 5000 and check MongoDB.')
+          setError(requestError.response?.data?.message || 'Could not connect to the API. Check that the API server is running on port 5001.')
         }
       } finally {
         if (isCurrent) setIsLoading(false)
@@ -83,7 +117,7 @@ const SearchPage = () => {
                 className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none"
               >
                 <option value="">All Universities</option>
-                {mockUniversities.map(u => (
+                {universities.map(u => (
                   <option key={u.id} value={u.name}>{u.name}</option>
                 ))}
               </select>
@@ -97,8 +131,8 @@ const SearchPage = () => {
                 className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-gray-700 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none"
               >
                 <option value="">All Courses</option>
-                {mockCourses.map(c => (
-                  <option key={c} value={c}>{c}</option>
+                {courses.map(c => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
                 ))}
               </select>
             </div>

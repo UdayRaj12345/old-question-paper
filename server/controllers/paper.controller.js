@@ -1,9 +1,7 @@
+const { getDB } = require('../config/database');
 const path = require('path');
 const { Readable } = require('stream');
 const Paper = require('../models/Paper');
-const University = require('../models/University');
-const Course = require('../models/Course');
-const Subject = require('../models/Subject');
 const cloudinary = require('../config/cloudinary');
 const streamifier = require('streamifier');
 
@@ -25,44 +23,59 @@ const buildCloudinaryDownloadUrl = (paper, downloadFileName) => {
 };
 
 // @desc    Get all papers
-// @route   GET /api/papers
-// @access  Public
 exports.getPapers = async (req, res, next) => {
   try {
-    res.status(200).json(res.advancedResults);
-  } catch (err) {
-    next(err);
-  }
+    const db = getDB();
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10));
+    const offset = (page - 1) * limit;
+    const where = ["p.status = 'Approved'"];
+    const values = [];
+    if (req.query.search) {
+      where.push('(p.title LIKE ? OR p.description LIKE ? OR p.subjectCode LIKE ?)');
+      const term = `%${String(req.query.search).slice(0, 100)}%`;
+      values.push(term, term, term);
+    }
+    if (req.query.semester && Number.isInteger(Number(req.query.semester))) {
+      where.push('p.semester = ?'); values.push(Number(req.query.semester));
+    }
+    if (req.query.course && Number.isInteger(Number(req.query.course))) {
+      where.push('p.course = ?'); values.push(Number(req.query.course));
+    }
+    const clause = `WHERE ${where.join(' AND ')}`;
+    const [countRows] = await db.execute(`SELECT COUNT(*) AS total FROM papers p ${clause}`, values);
+    const orderMap = { newest: 'p.createdAt DESC', downloads: 'p.downloads DESC', views: 'p.views DESC', title: 'p.title ASC' };
+    const order = orderMap[req.query.sort] || orderMap.newest;
+    const [rows] = await db.execute(
+      `SELECT p.*, s.name AS subjectName, s.code AS subjectCodeName, c.name AS courseName, u.name AS uploaderName
+       FROM papers p LEFT JOIN subjects s ON s.id=p.subject LEFT JOIN courses c ON c.id=p.course
+       LEFT JOIN users u ON u.id=p.uploadedBy ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`,
+      [...values, limit, offset]
+    );
+    const total = Number(countRows[0]?.total || 0);
+    res.status(200).json({ success: true, count: rows.length, total, pagination: { page, limit, pages: Math.ceil(total / limit) }, data: rows });
+  } catch (err) { next(err); }
 };
 
 // @desc    Get single paper
-// @route   GET /api/papers/:id
-// @access  Public
 exports.getPaper = async (req, res, next) => {
   try {
-    const paper = await Paper.findById(req.params.id)
-      .populate('university college department course subject uploadedBy', 'name code avatar');
-
-    if (!paper) {
-      return res.status(404).json({ success: false, message: `No paper found with id ${req.params.id}` });
-    }
-
-    // Increment views
-    paper.views += 1;
-    await paper.save();
-
-    res.status(200).json({
-      success: true,
-      data: paper
-    });
-  } catch (err) {
-    next(err);
-  }
+    const db = getDB();
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ success: false, message: 'Invalid paper ID' });
+    const [rows] = await db.execute(
+      `SELECT p.*, un.name AS universityName, co.name AS collegeName, d.name AS departmentName,
+       c.name AS courseName, s.name AS subjectName, s.code AS subjectCodeName, u.name AS uploaderName, u.avatar AS uploaderAvatar
+       FROM papers p LEFT JOIN universities un ON un.id=p.university LEFT JOIN colleges co ON co.id=p.college
+       LEFT JOIN departments d ON d.id=p.department LEFT JOIN courses c ON c.id=p.course
+       LEFT JOIN subjects s ON s.id=p.subject LEFT JOIN users u ON u.id=p.uploadedBy WHERE p.id=? LIMIT 1`, [id]);
+    if (!rows.length) return res.status(404).json({ success: false, message: `No paper found with id ${id}` });
+    const paper = await Paper.incrementCounter(id, 'views');
+    return res.status(200).json({ success: true, data: { ...rows[0], views: paper.views } });
+  } catch (err) { next(err); }
 };
 
 // @desc    Download a paper PDF with a proper filename
-// @route   GET /api/papers/:id/download
-// @access  Public
 exports.downloadPaper = async (req, res, next) => {
   try {
     const paper = await Paper.findById(req.params.id);
@@ -75,24 +88,20 @@ exports.downloadPaper = async (req, res, next) => {
       paper.originalFileName || `${paper.title || 'paper'}.pdf`
     );
 
-    paper.downloads = (paper.downloads || 0) + 1;
-    await paper.save();
-
     const downloadUrl = buildCloudinaryDownloadUrl(paper, downloadFileName);
     if (!downloadUrl) {
       return res.status(500).json({ success: false, message: 'The paper does not have a valid PDF URL' });
     }
 
     const response = await fetch(downloadUrl, {
-      headers: {
-        Accept: 'application/pdf,application/octet-stream',
-      },
+      headers: { Accept: 'application/pdf,application/octet-stream' },
     });
 
     if (!response.ok) {
       throw new Error(`Cloudinary download failed with status ${response.status}`);
     }
 
+    await Paper.incrementCounter(paper.id, 'downloads');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"`);
     res.setHeader('Cache-Control', 'no-store');
@@ -112,189 +121,227 @@ exports.downloadPaper = async (req, res, next) => {
 };
 
 // @desc    Upload new paper
-// @route   POST /api/papers
-// @access  Private
 exports.createPaper = async (req, res, next) => {
   try {
-    // Add user to req.body
-    req.body.uploadedBy = req.user.id;
-
-    // Auto approve if Admin or Faculty
-    if (req.user.role === 'Admin' || req.user.role === 'Faculty') {
-      req.body.approved = true;
-      req.body.status = 'Approved';
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Please log in before uploading a paper.'
+      });
     }
 
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'Please upload a PDF file' });
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload a PDF file.'
+      });
     }
 
-    req.body.originalFileName = sanitizeFileName(req.file.originalname || 'paper.pdf');
-
-    // Process string relationships to ObjectIds
-    if (req.body.universityName) {
-      let uni = await University.findOne({ name: { $regex: new RegExp(`^${req.body.universityName}$`, 'i') } });
-      if (!uni) uni = await University.create({ name: req.body.universityName, code: req.body.universityName.substring(0, 3).toUpperCase() });
-      req.body.university = uni._id;
+    if (req.file.mimetype !== 'application/pdf') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only PDF files are allowed.'
+      });
     }
 
-    if (req.body.courseName) {
-      let course = await Course.findOne({ name: { $regex: new RegExp(`^${req.body.courseName}$`, 'i') } });
-      if (!course) course = await Course.create({ name: req.body.courseName, code: req.body.courseName.substring(0, 3).toUpperCase() });
-      req.body.course = course._id;
+    const universityName = (req.body.universityName || '').trim();
+    const courseName = (req.body.courseName || '').trim();
+    const subjectName = (req.body.subjectName || '').trim();
+    const subjectCode = (req.body.subjectCode || '').trim();
+    const semester = Number(req.body.semester);
+    const examType = (req.body.examType || '').trim();
+
+    if (!universityName || !courseName || !subjectName ||
+        !subjectCode || !Number.isInteger(semester) ||
+        semester < 1 || semester > 8 || !examType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a university, course, subject, valid semester, and exam type.'
+      });
     }
 
-    if (req.body.subjectName) {
-      let subject = await Subject.findOne({ name: { $regex: new RegExp(`^${req.body.subjectName}$`, 'i') } });
-      if (!subject) {
-        subject = await Subject.create({
-          name: req.body.subjectName,
-          code: req.body.subjectCode || 'SUB',
-          course: req.body.course,
-          semester: req.body.semester || 1
-        });
-      }
-      req.body.subject = subject._id;
-    }
+    const db = getDB();
 
-    req.body.examYear = req.body.academicYear ? parseInt(req.body.academicYear.substring(0, 4)) : new Date().getFullYear();
-    req.body.title = `${req.body.subjectName || 'Unknown Subject'} - ${req.body.examType || 'Exam'} ${req.body.examYear}`;
-
-    // Upload to cloudinary using stream
-    const resourceType = req.file?.mimetype === 'application/pdf' ? 'raw' : 'auto';
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: 'college_papers',
-        resource_type: resourceType,
-        type: 'upload',
-        access_mode: 'public',
-      },
-      async (error, result) => {
-        if (error) {
-          console.error('Cloudinary upload error:', error);
-          return res.status(500).json({ success: false, message: error.message || 'Cloudinary upload failed' });
-        }
-
-        console.log('Cloudinary upload result:', result);
-
-        if (!result?.secure_url) {
-          return res.status(500).json({ success: false, message: 'Cloudinary upload did not return a secure URL' });
-        }
-
-        req.body.pdfURL = result.secure_url;
-        req.body.public_id = result.public_id;
-        req.body.resource_type = result.resource_type || resourceType;
-        req.body.type = result.type || 'upload';
-
-        const paper = await Paper.create(req.body);
-
-        res.status(201).json({
-          success: true,
-          message: 'Paper uploaded successfully',
-          data: paper
-        });
-      }
+    const [universities] = await db.execute(
+      'SELECT id FROM universities WHERE name = ? AND isActive = 1 LIMIT 1',
+      [universityName]
     );
-    streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
 
+    if (!universities.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected university was not found. Refresh the page and try again.'
+      });
+    }
+
+    const [courses] = await db.execute(
+      'SELECT id FROM courses WHERE name = ? AND isActive = 1 LIMIT 1',
+      [courseName]
+    );
+
+    if (!courses.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected course was not found. Refresh the page and try again.'
+      });
+    }
+
+    // Semester match nahi kiya jata: user koi bhi semester chun sakta hai.
+    const [subjects] = await db.execute(
+      `SELECT id, code, course
+       FROM subjects
+       WHERE name = ? AND code = ? AND course = ? AND isActive = 1
+       LIMIT 1`,
+      [subjectName, subjectCode, courses[0].id]
+    );
+
+    if (!subjects.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'The selected subject does not match the selected course. Please reselect the subject.'
+      });
+    }
+
+    const subject = subjects[0];
+
+    const nowYear = new Date().getFullYear();
+    const academicYear = `${nowYear}-${nowYear + 1}`;
+    const examYear = nowYear;
+
+    const title = `${subjectName} - ${examType} ${examYear}`;
+    const originalFileName = sanitizeFileName(req.file.originalname || 'paper.pdf');
+    const approved = ['Admin', 'Faculty'].includes(req.user.role);
+    const status = approved ? 'Approved' : 'Pending';
+
+    const result = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'college_papers',
+          resource_type: 'raw',
+          type: 'upload',
+          access_mode: 'public'
+        },
+        (error, uploadResult) => {
+          if (error) {
+            console.error('Cloudinary upload failed:', {
+  message: error.message,
+  http_code: error.http_code,
+  name: error.name,
+  details: error.error,
+  response: error.response?.body
+});
+            return reject(error);
+          }
+
+          if (!uploadResult || !uploadResult.secure_url) {
+            return reject(new Error('Cloudinary did not return a secure PDF URL.'));
+          }
+
+          resolve(uploadResult);
+        }
+      );
+
+      streamifier.createReadStream(req.file.buffer)
+        .on('error', reject)
+        .pipe(uploadStream);
+    });
+
+    const paper = await Paper.create({
+      title,
+      description: null,
+      university: universities[0].id,
+      course: courses[0].id,
+      subject: subject.id,
+      subjectCode: subject.code,
+      semester,
+      examType,
+      academicYear,
+      examYear,
+      language: 'English',
+      pdfURL: result.secure_url,
+      originalFileName,
+      public_id: result.public_id || null,
+      resource_type: result.resource_type || 'raw',
+      type: result.type || 'upload',
+      uploadedBy: req.user.id,
+      approved,
+      status
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Paper uploaded successfully',
+      data: paper
+    });
   } catch (err) {
-    next(err);
+    console.error('Create paper error:', err.stack || err);
+    return next(err);
   }
 };
 
 // @desc    Update paper
-// @route   PUT /api/papers/:id
-// @access  Private (Admin or Uploader)
 exports.updatePaper = async (req, res, next) => {
   try {
-    let paper = await Paper.findById(req.params.id);
-
-    if (!paper) {
-      return res.status(404).json({ success: false, message: `No paper found` });
-    }
-
-    // Make sure user is paper owner or admin
-    if (paper.uploadedBy.toString() !== req.user.id && req.user.role !== 'Admin') {
-      return res.status(403).json({ success: false, message: `User not authorized to update this paper` });
-    }
-
-    paper = await Paper.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    });
-
-    res.status(200).json({ success: true, data: paper });
-  } catch (err) {
-    next(err);
-  }
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ success: false, message: 'Invalid paper ID' });
+    const paper = await Paper.findById(id);
+    if (!paper) return res.status(404).json({ success: false, message: 'No paper found' });
+    if (String(paper.uploadedBy) !== String(req.user.id) && req.user.role !== 'Admin') return res.status(403).json({ success: false, message: 'User not authorized to update this paper' });
+    const allowed = ['title','description','semester','examType','academicYear','examYear','language','duration','maximumMarks','branch'];
+    const fields = []; const values = [];
+    for (const key of allowed) if (req.body[key] !== undefined) { fields.push(`\`${key}\` = ?`); values.push(req.body[key] === '' ? null : req.body[key]); }
+    if (!fields.length) return res.status(400).json({ success: false, message: 'No editable fields provided' });
+    const db = getDB(); values.push(id);
+    await db.execute(`UPDATE papers SET ${fields.join(', ')}, updatedAt=CURRENT_TIMESTAMP WHERE id=?`, values);
+    return res.status(200).json({ success: true, data: await Paper.findById(id) });
+  } catch (err) { next(err); }
 };
 
-// @desc    Delete paper
-// @route   DELETE /api/papers/:id
-// @access  Private (Admin or Uploader)
 exports.deletePaper = async (req, res, next) => {
   try {
-    const paper = await Paper.findById(req.params.id);
-
-    if (!paper) {
-      return res.status(404).json({ success: false, message: `No paper found` });
-    }
-
-    if (paper.uploadedBy.toString() !== req.user.id && req.user.role !== 'Admin') {
-      return res.status(403).json({ success: false, message: `User not authorized` });
-    }
-
-    await paper.deleteOne();
-    res.status(200).json({ success: true, data: {} });
-  } catch (err) {
-    next(err);
-  }
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ success: false, message: 'Invalid paper ID' });
+    const paper = await Paper.findById(id);
+    if (!paper) return res.status(404).json({ success: false, message: 'No paper found' });
+    if (String(paper.uploadedBy) !== String(req.user.id) && req.user.role !== 'Admin') return res.status(403).json({ success: false, message: 'User not authorized' });
+    const db = getDB();
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute('DELETE FROM bookmarks WHERE paper=?', [id]);
+      await connection.execute('DELETE FROM comments WHERE paper=?', [id]);
+      await connection.execute('DELETE FROM ratings WHERE paper=?', [id]);
+      await connection.execute('DELETE FROM reports WHERE paper=?', [id]);
+      await connection.execute('DELETE FROM papers WHERE id=?', [id]);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally { connection.release(); }
+    return res.status(200).json({ success: true, data: {} });
+  } catch (err) { next(err); }
 };
 
-// @desc    Search papers (text search)
-// @route   GET /api/papers/search?keyword=...
-// @access  Public
 exports.searchPapers = async (req, res, next) => {
   try {
-    const keyword = req.query.keyword;
-    if (!keyword) {
-      return res.status(400).json({ success: false, message: 'Please provide a search keyword' });
-    }
-
-    // We can use res.advancedResults in routes, or implement basic search here.
-    // Assuming advancedResults is used in the route.
-    res.status(200).json(res.advancedResults);
-  } catch (err) {
-    next(err);
-  }
+    if (!String(req.query.keyword || '').trim()) return res.status(400).json({ success: false, message: 'Please provide a search keyword' });
+    req.query.search = req.query.keyword;
+    return exports.getPapers(req, res, next);
+  } catch (err) { next(err); }
 };
 
-// @desc    Get recent papers
-// @route   GET /api/papers/recent
-// @access  Public
 exports.getRecentPapers = async (req, res, next) => {
   try {
-    const papers = await Paper.find({ status: 'Approved' })
-      .sort('-createdAt')
-      .limit(10)
-      .populate('subject', 'name code');
-    res.status(200).json({ success: true, count: papers.length, data: papers });
-  } catch (err) {
-    next(err);
-  }
+    const db = getDB();
+    const [rows] = await db.execute(`SELECT p.*, s.name AS subjectName, s.code AS subjectCodeName FROM papers p LEFT JOIN subjects s ON s.id=p.subject WHERE p.status='Approved' ORDER BY p.createdAt DESC LIMIT 10`);
+    res.status(200).json({ success: true, count: rows.length, data: rows });
+  } catch (err) { next(err); }
 };
 
-// @desc    Get popular papers
-// @route   GET /api/papers/popular
-// @access  Public
 exports.getPopularPapers = async (req, res, next) => {
   try {
-    const papers = await Paper.find({ status: 'Approved' })
-      .sort('-downloads')
-      .limit(10)
-      .populate('subject', 'name code');
-    res.status(200).json({ success: true, count: papers.length, data: papers });
-  } catch (err) {
-    next(err);
-  }
+    const db = getDB();
+    const [rows] = await db.execute(`SELECT p.*, s.name AS subjectName, s.code AS subjectCodeName FROM papers p LEFT JOIN subjects s ON s.id=p.subject WHERE p.status='Approved' ORDER BY p.downloads DESC, p.views DESC LIMIT 10`);
+    res.status(200).json({ success: true, count: rows.length, data: rows });
+  } catch (err) { next(err); }
 };

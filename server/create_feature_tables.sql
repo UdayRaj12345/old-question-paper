@@ -1,0 +1,72 @@
+-- Apply only after the base users, papers, subjects and school_classes tables exist.
+-- All tables use numeric IDs to match the active MySQL models.
+CREATE TABLE IF NOT EXISTS bookmarks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `user` BIGINT UNSIGNED NOT NULL,
+  paper BIGINT UNSIGNED NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_bookmark_user_paper (`user`, paper),
+  KEY idx_bookmark_user (`user`), KEY idx_bookmark_paper (paper)
+);
+
+CREATE TABLE IF NOT EXISTS comments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  paper BIGINT UNSIGNED NOT NULL,
+  `user` BIGINT UNSIGNED NOT NULL,
+  parentComment BIGINT UNSIGNED NULL,
+  text VARCHAR(2000) NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_comments_paper_created (paper, createdAt), KEY idx_comments_parent (parentComment)
+);
+
+CREATE TABLE IF NOT EXISTS ratings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  paper BIGINT UNSIGNED NOT NULL,
+  `user` BIGINT UNSIGNED NOT NULL,
+  rating TINYINT UNSIGNED NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_rating_paper_user (paper, `user`),
+  CONSTRAINT chk_rating_range CHECK (rating BETWEEN 1 AND 5)
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `user` BIGINT UNSIGNED NOT NULL,
+  paper BIGINT UNSIGNED NOT NULL,
+  reason ENUM('Wrong Paper','Duplicate Paper','Spam','Broken PDF','Other') NOT NULL,
+  description VARCHAR(500) NULL,
+  status ENUM('Pending','Reviewed','Resolved') NOT NULL DEFAULT 'Pending',
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_reports_status_created (status, createdAt)
+);
+
+CREATE TABLE IF NOT EXISTS notes (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  subject BIGINT UNSIGNED NOT NULL,
+  schoolClass BIGINT UNSIGNED NOT NULL,
+  topic VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  fileURL VARCHAR(1000) NOT NULL,
+  uploadedBy BIGINT UNSIGNED NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_notes_subject (subject), KEY idx_notes_class (schoolClass)
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `user` BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  type ENUM('Paper Approved','Paper Rejected','Announcement','System') NOT NULL DEFAULT 'System',
+  isRead BOOLEAN NOT NULL DEFAULT FALSE,
+  link VARCHAR(1000) NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_notifications_user_read_created (`user`, isRead, createdAt)
+);

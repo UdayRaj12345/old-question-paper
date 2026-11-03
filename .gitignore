@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Build files
+client/dist/
+dist/
+
+# System files
+.DS_Store
+.vscode/
+
+# Backup files
+*.backup
+*.save
+*.before-*
+
+# Migration backups
+server/migration-backup/

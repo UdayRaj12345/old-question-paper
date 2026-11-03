@@ -23,20 +23,20 @@ const LandingPage = () => {
 
   const features = [
     {
-      title: 'Easy Search',
-      description: 'Advanced filtering by university, course, semester, and subject code.',
+      title: 'Find Papers Faster',
+      description: 'Search ERA University question papers by course, semester, subject, or exam year to find the right study material.',
       icon: Search,
       color: 'bg-blue-500/10 text-blue-500',
     },
     {
-      title: 'Instant Download',
-      description: 'Preview and download PDF question papers instantly with no wait times.',
+      title: 'Quick PDF Access',
+      description: 'Preview and download available question papers in PDF format, making exam preparation simple and convenient.',
       icon: Download,
       color: 'bg-green-500/10 text-green-500',
     },
     {
-      title: 'Verified Papers',
-      description: 'All papers are verified by faculty or trusted community members.',
+      title: 'Reliable Study Resources',
+      description: 'Access organized question papers with clear course and subject details to support focused, confident exam preparation.',
       icon: ShieldCheck,
       color: 'bg-purple-500/10 text-purple-500',
     },
@@ -63,26 +63,26 @@ const LandingPage = () => {
             </span>
             New: AI-Powered Search is Live!
           </div>
-          
+
           <h1 className="text-5xl md:text-7xl font-extrabold text-gray-900 dark:text-white tracking-tight mb-8 leading-tight">
             The Ultimate Hub for <br className="hidden md:block" />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-500">
               Previous Year Papers
             </span>
           </h1>
-          
+
           <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-2xl mx-auto">
-            Ace your exams with QuestionHub. Search, preview, and download thousands of verified previous year question papers from top universities.
+Find previous year question papers, practice by subject, and prepare for your exams with confidence.
           </p>
 
           <div className="w-full max-w-2xl mx-auto bg-white dark:bg-dark-card p-2 rounded-2xl shadow-xl shadow-primary/10 border border-gray-200 dark:border-gray-800">
             <form onSubmit={handleSearch} className="relative flex items-center">
               <Search className="absolute left-4 h-6 w-6 text-gray-400" />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by subject, code, or university..." 
+                placeholder="Search by subject, code, or course..."
                 className="w-full pl-12 pr-32 py-4 bg-transparent border-none focus:outline-none text-gray-900 dark:text-white text-lg placeholder-gray-400"
               />
               <button type="submit" className="absolute right-2 top-2 bottom-2 bg-primary hover:bg-primary-hover text-white px-6 rounded-xl font-medium transition-colors flex items-center gap-2">
@@ -90,7 +90,7 @@ const LandingPage = () => {
               </button>
             </form>
           </div>
-          
+
           <div className="mt-8 flex flex-wrap justify-center gap-4 text-sm text-gray-500 dark:text-gray-400">
             <span>Popular searches:</span>
             <Link to="/search?q=Data+Structures" className="hover:text-primary transition-colors underline decoration-dotted">Data Structures</Link>
@@ -105,7 +105,7 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {stats.map((stat, idx) => (
-              <motion.div 
+              <motion.div
                 key={idx}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -127,13 +127,13 @@ const LandingPage = () => {
       {/* Features Section */}
       <section className="py-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">Why choose QuestionHub?</h2>
-          <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">Everything you need to prepare for your exams efficiently, all in one place.</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">Why Choose PaperHub?</h2>
+          <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">Everything ERA University students need for smarter exam preparation — previous year question papers, easy access, and a better way to study.</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-8">
           {features.map((feature, idx) => (
-            <motion.div 
+            <motion.div
               key={idx}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -146,7 +146,7 @@ const LandingPage = () => {
               </div>
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">{feature.title}</h3>
               <p className="text-gray-600 dark:text-gray-400 leading-relaxed">{feature.description}</p>
-              
+
               <div className="mt-8 flex items-center text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary transition-colors">
                 Learn more <ArrowRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
               </div>
@@ -160,16 +160,16 @@ const LandingPage = () => {
         <div className="bg-gradient-to-br from-primary to-purple-800 rounded-3xl p-10 md:p-16 text-center text-white overflow-hidden relative shadow-2xl">
           <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
           <div className="relative z-10 max-w-3xl mx-auto">
-            <h2 className="text-3xl md:text-5xl font-bold mb-6">Ready to ace your exams?</h2>
+            <h2 className="text-3xl md:text-5xl font-bold mb-6">Your Next Exam Starts Here.</h2>
             <p className="text-purple-100 text-lg md:text-xl mb-10">
-              Join thousands of students who are already using QuestionHub to improve their grades. Registration is free and takes less than a minute.
+            Get ready with previous year question papers from ERA University. Find the right subjects, practice with purpose, and prepare with confidence.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link to="/register" className="bg-white text-primary hover:bg-gray-50 px-8 py-4 rounded-full font-bold text-lg transition-colors shadow-lg">
                 Create Free Account
               </Link>
               <Link to="/search" className="bg-primary-hover text-white border border-purple-400 hover:bg-purple-600 px-8 py-4 rounded-full font-bold text-lg transition-colors">
-                Browse Papers
+                Explore Question Papers →
               </Link>
             </div>
           </div>

@@ -1,80 +1,77 @@
-const mongoose = require('mongoose');
+const { getDB } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const UserSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Please add a name']
-  },
-  email: {
-    type: String,
-    required: [true, 'Please add an email'],
-    unique: true,
-    match: [
-      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-      'Please add a valid email'
-    ]
-  },
-  password: {
-    type: String,
-    required: [true, 'Please add a password'],
-    minlength: 6,
-    select: false
-  },
-  role: {
-    type: String,
-    enum: ['Guest', 'Student', 'Faculty', 'Admin', 'Parent', 'Staff'],
-    default: 'Student'
-  },
-  avatar: {
-    type: String,
-    default: 'default.jpg'
-  },
-  college: {
-    type: mongoose.Schema.ObjectId,
-    ref: 'College'
-  },
-  course: {
-    type: mongoose.Schema.ObjectId,
-    ref: 'Course'
-  },
-  branch: {
-    type: String
-  },
-  semester: {
-    type: Number
-  },
-  isVerified: {
-    type: Boolean,
-    default: false
-  },
-  resetPasswordToken: String,
-  resetPasswordExpire: Date
-}, {
-  timestamps: true
-});
+const User = {
+  async findByEmail(email, includePassword = false) {
+    const db = getDB();
+    const columns = includePassword
+      ? '*'
+      : 'id, name, email, role, avatar, college, course, branch, semester, isVerified, createdAt, updatedAt';
 
-// Encrypt password using bcrypt
-UserSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
-    return next();
+    const [rows] = await db.execute(
+      `SELECT ${columns} FROM users WHERE email = ? LIMIT 1`,
+      [email]
+    );
+    return rows[0] || null;
+  },
+
+  async findById(id) {
+    const db = getDB();
+    const [rows] = await db.execute(
+      `SELECT id, name, email, role, avatar, college, course, branch, semester, isVerified, createdAt, updatedAt FROM users WHERE id = ? LIMIT 1`,
+      [id]
+    );
+    return rows[0] || null;
+  },
+
+  async create(data) {
+    const db = getDB();
+    const {
+      name, email, password,
+      role = 'Student',
+      college = null,
+      course = null,
+      branch = null,
+      semester = null
+    } = data;
+
+    if (!name || !email || !password) {
+      throw new Error('Please provide name, email and password');
+    }
+    if (password.length < 6) {
+      throw new Error('Password must be at least 6 characters');
+    }
+
+    const roles = ['Guest', 'Student', 'Faculty', 'Admin', 'Parent', 'Staff'];
+    if (!roles.includes(role)) {
+      throw new Error('Invalid user role');
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const [result] = await db.execute(
+      `INSERT INTO users (name, email, password, role, college, course, branch, semester)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name, email, hashedPassword, role, college || null, course || null, branch || null, semester ?? null]
+    );
+
+    return this.findById(result.insertId);
+  },
+
+  async matchPassword(enteredPassword, hashedPassword) {
+    return bcrypt.compare(enteredPassword, hashedPassword);
+  },
+
+  getSignedJwtToken(user) {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not configured');
+    }
+    return jwt.sign(
+      { id: user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE || '30d' }
+    );
   }
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-});
-
-// Sign JWT and return
-UserSchema.methods.getSignedJwtToken = function() {
-  return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE
-  });
 };
 
-// Match user entered password to hashed password in database
-UserSchema.methods.matchPassword = async function(enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
-};
-
-module.exports = mongoose.model('User', UserSchema);
+module.exports = User;

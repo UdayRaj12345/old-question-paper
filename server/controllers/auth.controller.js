@@ -1,193 +1,122 @@
 const User = require('../models/User');
-const College = require('../models/College');
-const Course = require('../models/Course');
-const crypto = require('crypto');
+const { getDB } = require('../config/database');
 
-// @desc    Register user
-// @route   POST /api/auth/register
-// @access  Public
+const sendTokenResponse = (user, statusCode, res) => {
+  const token = User.getSignedJwtToken(user);
+  const production = process.env.NODE_ENV === 'production';
+
+  return res.status(statusCode)
+    .cookie('token', token, {
+      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      httpOnly: true,
+      sameSite: production ? 'none' : 'lax',
+      secure: production
+    })
+    .json({ success: true, token, data: user });
+};
+
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role, college, course, branch, semester } = req.body;
 
-    // Check if user exists
-    const userExists = await User.findOne({ email });
-    if (userExists) {
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, message: 'Name, email and password are required' });
+    }
+
+    if (await User.findByEmail(email)) {
       return res.status(400).json({ success: false, message: 'User already exists' });
     }
 
-    // Create user
-    const user = await User.create({
-      name,
-      email,
-      password,
-      role: role || 'Student',
-      college,
-      course,
-      branch,
-      semester
-    });
-
-    sendTokenResponse(user, 201, res);
+    // Public registration must never allow a client to self-assign Admin/Faculty roles.
+    const user = await User.create({ name, email, password, role: 'Student', college, course, branch, semester });
+    return sendTokenResponse(user, 201, res);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message || 'Server Error' });
+    console.error('Register error:', err.message);
+    return res.status(err.code === 'ER_DUP_ENTRY' ? 400 : 500).json({
+      success: false,
+      message: err.code === 'ER_DUP_ENTRY' ? 'Email already registered' : (err.message === 'Password must be at least 6 characters' || err.message === 'Invalid user role' || err.message === 'Please provide name, email and password' ? err.message : 'Registration failed')
+    });
   }
 };
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
+    }
 
-    // Check for user
-    const user = await User.findOne({ email }).select('+password');
-
-    if (!user) {
+    const user = await User.findByEmail(email, true);
+    if (!user || !user.password || !(await User.matchPassword(password, user.password))) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Check if password matches
-    const isMatch = await user.matchPassword(password);
-
-    if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    }
-
-    sendTokenResponse(user, 200, res);
+    const { password: ignored, ...safeUser } = user;
+    return sendTokenResponse(safeUser, 200, res);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message || 'Server Error' });
+    console.error('Login error:', err.message);
+    return res.status(500).json({ success: false, message: 'Login failed' });
   }
 };
 
-// @desc    Get current logged in user
-// @route   GET /api/auth/profile
-// @access  Private
 exports.getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).populate('college course');
-
-    res.status(200).json({
-      success: true,
-      data: user
-    });
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    return res.status(200).json({ success: true, data: user });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message || 'Server Error' });
+    console.error('Get profile error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not fetch profile' });
   }
 };
 
-// @desc    Update user details
-// @route   PUT /api/auth/profile
-// @access  Private
 exports.updateDetails = async (req, res) => {
   try {
-    const { name, collegeName, courseName, branch, semester } = req.body;
-    let fieldsToUpdate = { name, branch, semester };
+    const db = getDB();
+    const { name, branch, semester, college, course } = req.body;
+    const fields = [];
+    const values = [];
 
-    if (collegeName) {
-      let college = await College.findOne({ name: { $regex: new RegExp(`^${collegeName}$`, 'i') } });
-      if (!college) {
-        college = await College.create({ name: collegeName, code: collegeName.substring(0, 3).toUpperCase() });
-      }
-      fieldsToUpdate.college = college._id;
+    if (name !== undefined) { fields.push('name = ?'); values.push(name); }
+    if (branch !== undefined) { fields.push('branch = ?'); values.push(branch || null); }
+    if (semester !== undefined) {
+      fields.push('semester = ?');
+      values.push(semester === '' || semester === null ? null : Number(semester));
+    }
+    if (college !== undefined) { fields.push('college = ?'); values.push(college || null); }
+    if (course !== undefined) { fields.push('course = ?'); values.push(course || null); }
+
+    if (fields.length) {
+      values.push(req.user.id);
+      await db.execute(
+        `UPDATE users SET ${fields.join(', ')}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+        values
+      );
     }
 
-    if (courseName) {
-      let course = await Course.findOne({ name: { $regex: new RegExp(`^${courseName}$`, 'i') } });
-      if (!course) {
-        course = await Course.create({ name: courseName, code: courseName.substring(0, 3).toUpperCase() });
-      }
-      fieldsToUpdate.course = course._id;
-    }
-
-    // Clean undefined fields
-    Object.keys(fieldsToUpdate).forEach(key => fieldsToUpdate[key] === undefined && delete fieldsToUpdate[key]);
-
-    const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
-      new: true,
-      runValidators: true
-    }).populate('college course');
-
-    res.status(200).json({ success: true, data: user });
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    return res.status(200).json({ success: true, data: user });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message || 'Server Error' });
+    console.error('Update profile error:', err.message);
+    return res.status(500).json({ success: false, message: 'Could not update profile' });
   }
 };
 
-// @desc    Log user out / clear cookie
-// @route   POST /api/auth/logout
-// @access  Private
 exports.logout = async (req, res) => {
-  try {
-    res.cookie('token', 'none', {
-      expires: new Date(Date.now() + 10 * 1000),
-      httpOnly: true
-    });
-
-    res.status(200).json({
-      success: true,
-      data: {}
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message || 'Server Error' });
-  }
-};
-
-// @desc    Forgot password / Reset password - Placeholders (needs email service)
-// @route   POST /api/auth/forgot-password
-// @access  Public
-exports.forgotPassword = async (req, res) => {
-  try {
-    res.status(200).json({ success: true, message: 'Forgot password email sent' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message || 'Server Error' });
-  }
-};
-
-// @desc    Reset password
-// @route   PUT /api/auth/reset-password/:resettoken
-// @access  Public
-exports.resetPassword = async (req, res) => {
-  try {
-    res.status(200).json({ success: true, message: 'Password reset successful' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message || 'Server Error' });
-  }
-};
-
-// Helper function to get token from model, create cookie and send response
-const sendTokenResponse = (user, statusCode, res) => {
-  if (!process.env.JWT_SECRET) {
-    return res.status(500).json({ success: false, message: 'JWT_SECRET is not configured' });
-  }
-
-  // Create token
-  const token = user.getSignedJwtToken();
-
-  const options = {
-    expires: new Date(Date.now() + (Number(process.env.JWT_COOKIE_EXPIRE) || 7) * 24 * 60 * 60 * 1000),
+  const production = process.env.NODE_ENV === 'production';
+  res.clearCookie('token', {
     httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-  };
+    sameSite: production ? 'none' : 'lax',
+    secure: production
+  });
+  return res.status(200).json({ success: true, message: 'Logged out successfully' });
+};
 
-  if (process.env.NODE_ENV === 'production') {
-    options.secure = true;
-  }
+exports.forgotPassword = async (req, res) => {
+  return res.status(501).json({ success: false, message: 'Password reset is not configured yet' });
+};
 
-  res
-    .status(statusCode)
-    .cookie('token', token, options)
-    .json({
-      success: true,
-      token,
-      data: user
-    });
+exports.resetPassword = async (req, res) => {
+  return res.status(501).json({ success: false, message: 'Password reset is not configured yet' });
 };

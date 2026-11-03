@@ -1,3 +1,4 @@
+
 import axios from 'axios'
 
 export const getApiBaseUrl = () => {
@@ -14,10 +15,8 @@ export const getApiBaseUrl = () => {
   return 'https://paperhub-r8p4.onrender.com/api'
 }
 
-const apiBaseUrl = getApiBaseUrl()
-
 const api = axios.create({
-  baseURL: apiBaseUrl,
+  baseURL: getApiBaseUrl(),
   withCredentials: true,
 })
 
@@ -34,6 +33,21 @@ export const getPaper = async (id) => {
 export const getApiHealth = async () => {
   const { data } = await api.get('/health')
   return data
+}
+
+export const getUniversities = async () => {
+  const { data } = await api.get('/academic/universities')
+  return data.data
+}
+
+export const getCourses = async () => {
+  const { data } = await api.get('/academic/courses')
+  return data.data
+}
+
+export const getSubjects = async () => {
+  const { data } = await api.get('/academic/subjects')
+  return data.data
 }
 
 export default api
