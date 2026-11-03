@@ -1,5 +1,5 @@
 import { BookOpen } from 'lucide-react'
-import { FaGithub, FaTwitter, FaLinkedin } from 'react-icons/fa'
+import { FaGithub, FaTelegram, FaLinkedin } from 'react-icons/fa'
 import { Link } from 'react-router-dom'
 
 const Footer = () => {
@@ -18,8 +18,8 @@ const Footer = () => {
               Access Era University question papers in one place. Search by course, semester, subject, or exam year to find study resources and prepare for your exams.
             </p>
             <div className="flex space-x-4">
-              <a href="#" className="text-gray-400 hover:text-primary transition-colors">
-                <FaTwitter className="h-5 w-5" />
+              <a href="https://t.me/Udayraj75" className="text-gray-400 hover:text-primary transition-colors">
+                <FaTelegram className="h-5 w-5" />
               </a>
               <a href="https://github.com/UdayRaj12345" className="text-gray-400 hover:text-primary transition-colors">
                 <FaGithub className="h-5 w-5" />

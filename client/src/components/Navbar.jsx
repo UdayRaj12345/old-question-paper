@@ -17,7 +17,7 @@ const Navbar = () => {
                 <BookOpen className="h-6 w-6 text-primary" />
               </div>
               <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
-                QuestionHub
+                PaperHub
               </span>
             </Link>
           </div>
