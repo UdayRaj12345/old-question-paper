@@ -20,6 +20,7 @@ const allowedOrigins = [
     ? process.env.LOCAL_FRONTEND_URL.split(',')
     : []),
   'https://paperhub-sandy.vercel.app',
+  'https://old-question-paper-six.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
 ].map(origin => origin.trim()).filter(Boolean);
